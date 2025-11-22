@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Daniels veldig fancy investeringskalkulator</title>
+    <title>Investeringskalkulator</title>
     
     <!-- Laster inn Tailwind CSS for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -23,6 +23,8 @@
 
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        /* Gjør legend items klikkbare */
+        .recharts-legend-item { cursor: pointer; }
     </style>
 </head>
 <body class="bg-gray-50 text-gray-900">
@@ -54,20 +56,30 @@
             const [years, setYears] = useState(10);
             const [simulateCrash, setSimulateCrash] = useState(false);
             const [withdrawalYear, setWithdrawalYear] = useState(5);
+            const [hiddenSeries, setHiddenSeries] = useState([]); // State for toggling graph lines
             
-            // Configuration - Updated defaults based on DNB/Nordea examples
+            // Configuration
             const [config, setConfig] = useState({
                 loan: { rate: 4.793, cost: 0, tax: 22, vol: 0, liq: 1, name: 'Betale Boliglån', color: '#16a34a' },
                 savings: { rate: 4.60, cost: 0, tax: 22, vol: 0, liq: 3, name: 'Sparekonto', color: '#6b7280' },
-                // DNB Likviditet A: ~5.3-5.45% return, 0.35 cost
                 liquidity: { rate: 5.45, cost: 0.35, tax: 22, vol: 1.5, liq: 3, name: 'Likviditetsfond', color: '#2563eb' },
-                // Average of Landkreditt/Arctic: ~6.5% return, ~0.38% cost
                 bonds: { rate: 6.50, cost: 0.38, tax: 22, vol: 6.0, liq: 2, name: 'Obligasjon (High Yield)', color: '#d97706' },
-                // DNB Global Indeks A: 0.20 cost
                 index: { rate: 8.00, cost: 0.20, tax: 37.84, vol: 15, liq: 3, shield: 3.2, name: 'Indeksfond', color: '#dc2626' }
             });
 
-            // --- HELPER: Rate Curve (Central Bank Simulation) ---
+            // Helper for toggling visibility
+            const toggleSeries = (e) => {
+                const dataKey = e.id;
+                setHiddenSeries(prev => 
+                    prev.includes(dataKey) 
+                        ? prev.filter(key => key !== dataKey) 
+                        : [...prev, dataKey]
+                );
+            };
+
+            // Check if a series is hidden
+            const isHidden = (key) => hiddenSeries.includes(key);
+
             const getProjectedRate = (baseRate, year) => {
                 const maxCut = 1.0; 
                 const cutPerYear = 1.0 / 3; 
@@ -75,7 +87,6 @@
                 return Math.max(0, baseRate - currentCut);
             };
 
-            // --- FORMATTERS ---
             const formatNOK = (value) => 
                 new Intl.NumberFormat('no-NO', { style: 'currency', currency: 'NOK', maximumFractionDigits: 0 }).format(value);
 
@@ -99,8 +110,7 @@
                     if (t === 0) {
                         ['loan', 'savings', 'liquidity', 'bonds', 'index'].forEach(k => {
                             row[k] = startCapital;
-                            row[`${k}High`] = startCapital;
-                            row[`${k}Low`] = startCapital;
+                            row[k + 'Range'] = [startCapital, startCapital];
                             row[`${k}Dev`] = 0;
                         });
                     } else {
@@ -161,8 +171,7 @@
                         ['liquidity', 'bonds', 'index', 'loan', 'savings'].forEach(k => {
                             const conf = config[k];
                             const risk = calcRisk(row[k], conf.vol);
-                            row[`${k}High`] = risk.high;
-                            row[`${k}Low`] = risk.low;
+                            row[k + 'Range'] = [risk.low, risk.high];
                             row[`${k}Dev`] = risk.dev;
                         });
                     }
@@ -177,6 +186,8 @@
                 if (!row) return [];
 
                 const createBarData = (key, label) => {
+                    if (isHidden(key)) return null; // Skip hidden series in bar chart too? (Optional, but keeps charts synced)
+                    
                     const netValue = row[key];
                     const deviation = row[`${key}Dev`]; 
                     const conf = config[key];
@@ -197,9 +208,9 @@
                     createBarData('liquidity', 'Likviditetsfond'),
                     createBarData('bonds', 'Obligasjon'),
                     createBarData('index', 'Indeksfond'),
-                ].sort((a,b) => a.value - b.value);
+                ].filter(Boolean).sort((a,b) => a.value - b.value); // Filter nulls
 
-            }, [data, withdrawalYear, config, years]);
+            }, [data, withdrawalYear, config, years, hiddenSeries]);
 
             const handleConfigChange = (category, field, value) => {
                 setConfig(prev => ({
@@ -214,7 +225,7 @@
                         <div className="bg-white p-4 border border-gray-200 shadow-lg rounded-lg text-sm z-50">
                             <p className="font-bold mb-2 text-gray-700">{label}</p>
                             {payload.map((entry, index) => {
-                                if (entry.name.includes('Risiko') || entry.dataKey.includes('High') || entry.dataKey.includes('Low')) return null;
+                                if (entry.dataKey.includes('Range')) return null;
                                 
                                 const key = entry.dataKey;
                                 const dev = entry.payload[`${key}Dev`];
@@ -282,7 +293,7 @@
                     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
                         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
                             <span className="text-blue-600"><Icons.Calculator /></span>
-                            Investeringskalkulator
+                            Daniels veldig fancy investeringskalkulator
                         </h1>
                         <p className="text-gray-600 mt-2 text-sm">
                             Inkluderer nå: <strong>Renteprognose</strong> (gradvis nedgang -1.0% over 3 år), <strong>Uttaksrisiko</strong> og <strong>Likviditetsgrad</strong>.
@@ -396,7 +407,7 @@
                             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 relative">
                                 <h3 className="text-lg font-bold text-gray-800 mb-6 flex justify-between items-center">
                                     <span>Verdiutvikling (Netto)</span>
-                                    <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">Hold over grafen for detaljer</span>
+                                    <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">Klikk på navn i legende for å skjule</span>
                                 </h3>
                                 
                                 <div className="h-[400px] w-full">
@@ -417,29 +428,25 @@
                                                 verticalAlign="top" 
                                                 height={36} 
                                                 iconType="circle"
+                                                onClick={toggleSeries}
                                                 payload={[
-                                                { value: config.loan.name, type: 'line', id: 'loan', color: config.loan.color },
-                                                { value: config.savings.name, type: 'line', id: 'savings', color: config.savings.color },
-                                                { value: config.liquidity.name, type: 'line', id: 'liquidity', color: config.liquidity.color },
-                                                { value: config.bonds.name, type: 'line', id: 'bonds', color: config.bonds.color },
-                                                { value: config.index.name, type: 'line', id: 'index', color: config.index.color },
+                                                  { value: config.loan.name, type: 'line', id: 'loan', color: isHidden('loan') ? '#ccc' : config.loan.color },
+                                                  { value: config.savings.name, type: 'line', id: 'savings', color: isHidden('savings') ? '#ccc' : config.savings.color },
+                                                  { value: config.liquidity.name, type: 'line', id: 'liquidity', color: isHidden('liquidity') ? '#ccc' : config.liquidity.color },
+                                                  { value: config.bonds.name, type: 'line', id: 'bonds', color: isHidden('bonds') ? '#ccc' : config.bonds.color },
+                                                  { value: config.index.name, type: 'line', id: 'index', color: isHidden('index') ? '#ccc' : config.index.color },
                                                 ]}
                                             />
                                             
-                                            <Area type="monotone" dataKey="indexHigh" stroke="none" fill={config.index.color} fillOpacity={0.1} name="Risiko Indeks" legendType="none" />
-                                            <Area type="monotone" dataKey="indexLow" stroke="none" fill="#fff" fillOpacity={0.8} legendType="none" /> 
+                                            <Area type="monotone" dataKey="indexRange" stroke="none" fill={config.index.color} fillOpacity={0.15} name="Risiko Indeks" legendType="none" hide={isHidden('index')} />
+                                            <Area type="monotone" dataKey="bondsRange" stroke="none" fill={config.bonds.color} fillOpacity={0.15} name="Risiko Obligasjon" legendType="none" hide={isHidden('bonds')} />
+                                            <Area type="monotone" dataKey="liquidityRange" stroke="none" fill={config.liquidity.color} fillOpacity={0.2} name="Risiko Likviditet" legendType="none" hide={isHidden('liquidity')} />
                                             
-                                            <Area type="monotone" dataKey="bondsHigh" stroke="none" fill={config.bonds.color} fillOpacity={0.15} name="Risiko Obligasjon" legendType="none" />
-                                            <Area type="monotone" dataKey="bondsLow" stroke="none" fill="#fff" fillOpacity={0.8} legendType="none" />
-
-                                            <Area type="monotone" dataKey="liquidityHigh" stroke="none" fill={config.liquidity.color} fillOpacity={0.2} name="Risiko Likviditet" legendType="none" />
-                                            <Area type="monotone" dataKey="liquidityLow" stroke="none" fill="#fff" fillOpacity={0.8} legendType="none" />
-                                            
-                                            <Line type="monotone" dataKey="loan" stroke={config.loan.color} strokeWidth={2} dot={false} name="Betale Lån" strokeDasharray="5 5" />
-                                            <Line type="monotone" dataKey="savings" stroke={config.savings.color} strokeWidth={2} dot={false} name="Sparekonto" />
-                                            <Line type="monotone" dataKey="liquidity" stroke={config.liquidity.color} strokeWidth={2} dot={false} name="Likviditet" />
-                                            <Line type="monotone" dataKey="bonds" stroke={config.bonds.color} strokeWidth={2} dot={false} name="Obligasjon" />
-                                            <Line type="monotone" dataKey="index" stroke={config.index.color} strokeWidth={3} dot={{r: 3}} name="Indeksfond" />
+                                            <Line type="monotone" dataKey="loan" stroke={config.loan.color} strokeWidth={2} dot={false} name="Betale Lån" strokeDasharray="5 5" hide={isHidden('loan')} />
+                                            <Line type="monotone" dataKey="savings" stroke={config.savings.color} strokeWidth={2} dot={false} name="Sparekonto" hide={isHidden('savings')} />
+                                            <Line type="monotone" dataKey="liquidity" stroke={config.liquidity.color} strokeWidth={2} dot={false} name="Likviditet" hide={isHidden('liquidity')} />
+                                            <Line type="monotone" dataKey="bonds" stroke={config.bonds.color} strokeWidth={2} dot={false} name="Obligasjon" hide={isHidden('bonds')} />
+                                            <Line type="monotone" dataKey="index" stroke={config.index.color} strokeWidth={3} dot={{r: 3}} name="Indeksfond" hide={isHidden('index')} />
                                         </ComposedChart>
                                     </ResponsiveContainer>
                                 </div>
@@ -534,7 +541,6 @@
                             <li><strong>Likviditetsfond:</strong> DNB Likviditet A. <br/><span className="text-xs ml-4">Årlig kost: 0,35%. Hist. avkastning (1/3/5 år): 5,3% / 5,45% / 3,5%.</span></li>
                             <li><strong>Obligasjonsfond (Høyrente):</strong> Basert på snitt av Landkreditt Høyrente A og Arctic Return Class B. <br/><span className="text-xs ml-4">Kost: 0,32-0,44%. Hist. avkastning: ca 4,6% - 7,35%.</span></li>
                             <li><strong>Lån:</strong> I Statens Pensjonskasse med flytende rente. Markedets beste avtale, kun for statsansatte som meg. 😊</li>
-                              
                           </ul>
                         </div>
 
